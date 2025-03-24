@@ -1,4 +1,5 @@
 def gitlabPipelineStages = ["setup", "build_and_publish_oci"]
+
 pipeline {
     agent {
       kubernetes {
@@ -7,8 +8,9 @@ pipeline {
       }
     }
     environment {
-      REPO_FAMILY = "${env.gitlabBranch == 'hotfixes' ? 'candidates' : 'inprogress'}"
+      REPO_FAMILY = "${env.gitlabBranch ==~ /(?i)^ct\d+(pp\d+)?$/ ? 'candidates' : 'inprogress'}"
       NC_REGISTRY = "nc-docker-${env.REPO_FAMILY}.${env.ARTIFACTORY_FQDN}"
+      IMAGE_TAG = "${resolveVersionFromBranch(env.gitlabBranch)}-${env.BUILD_NUMBER}"
     }
     options {
       gitLabConnection('gitlab-ee2')
@@ -24,7 +26,7 @@ pipeline {
           checkout([$class: 'GitSCM', branches: [[name: "*/${env.gitlabBranch}"]], extensions: [], userRemoteConfigs: [[credentialsId: 'nc-gitlab', url: 'git@gitlabe2.ext.net.nokia.com:continuum/devinfra/cibaseimg.git']]])
         }
         post {
-          failure {
+          unsuccessful {
             handleGitlabPipelinestages(gitlabPipelineStages, "setup", "failed")
           }
           success {
@@ -41,10 +43,25 @@ pipeline {
               "Dockerfilepath": "./build/Dockerfile", 
               "contextpath": "."
             ],
-          ], env.BUILD_NUMBER, env.REPO_FAMILY)
+            [
+              "imagename": "${env.NC_REGISTRY}/porch/porch-fnrunner-nokia",
+              "Dockerfilepath": "./func/Dockerfile",
+              "contextpath": "."
+            ],
+            [
+              "imagename": "${env.NC_REGISTRY}/porch/porch-fn-wrapper-nokia",
+              "Dockerfilepath": "./func/Dockerfile-wrapperserver",
+              "contextpath": "."
+            ],
+            [
+              "imagename": "${env.NC_REGISTRY}/porch/porch-controllers-nokia",
+              "Dockerfilepath": "./controllers/Dockerfile",
+              "contextpath": "."
+            ]
+          ], env.IMAGE_TAG, env.REPO_FAMILY)
         }
         post {
-          failure {
+          unsuccessful {
             handleGitlabPipelinestages(gitlabPipelineStages, 'build_and_publish_oci', 'failed')
           }
           success {
@@ -57,7 +74,7 @@ pipeline {
       always {
         cleanWs()
       }
-      failure {
+      unsuccessful {
         addGitLabMRComment(comment: "Build ${BUILD_URL} failed. The build may be retriggered with the comment 'retrigger'.")
       }
       success {
