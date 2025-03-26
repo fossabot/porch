@@ -115,7 +115,7 @@ func (m *applyPatchMutation) apply(ctx context.Context, resources repository.Pac
 			}
 			var output bytes.Buffer
 			if err := gitdiff.Apply(&output, strings.NewReader(oldContents), files[0]); err != nil {
-				return result, nil, fmt.Errorf("error applying patch: %w", err)
+				return result, nil, fmt.Errorf("error applying patch to %q: %w\n---  patch was ---: [[[%s]]]\n--- content was ---: {{{%s}}}\n---", patchSpec.File, err, patchSpec.Contents, oldContents)
 			}
 
 			patched := output.String()

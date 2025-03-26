@@ -188,6 +188,8 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 	// Updates are done.
 	repoPkgRev, err := repo.ClosePackageRevisionDraft(ctx, draft, "")
 	if err != nil {
+		// try to rollback the previously created package revision
+		_ = repo.DeletePackageRevision(ctx, repoPkgRev)
 		return nil, err
 	}
 	pkgRevMeta := metav1.ObjectMeta{
@@ -200,6 +202,12 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 	}
 	pkgRevMeta, err = cad.metadataStore.Create(ctx, pkgRevMeta, repositoryObj.Name, repoPkgRev.UID())
 	if err != nil {
+		// try to rollback the previously created package revision
+		errDel := repo.DeletePackageRevision(ctx, repoPkgRev)
+		if errDel != nil {
+			klog.Warningf("Failed to rollback the creation of package revision %s/%s: %v", repoPkgRev.KubeObjectNamespace(), repoPkgRev.KubeObjectName(), errDel)
+		}
+		// return with the error
 		if (apierrors.IsUnauthorized(err) || apierrors.IsForbidden(err)) && repository.AnyBlockOwnerDeletionSet(obj) {
 			return nil, fmt.Errorf("failed to create internal PackageRev object, because blockOwnerDeletion is enabled for some ownerReference "+
 				"(it is likely that the serviceaccount of porch-server does not have the rights to update finalizers in the owner object): %w", err)
